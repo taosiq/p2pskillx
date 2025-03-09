@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1056682056125",
+    "project_id": "p2pskillx-e5c83",
+    "storage_bucket": "p2pskillx-e5c83.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1056682056125:android:37e5cba384a1474a21dad4",
+        "android_client_info": {
+          "package_name": "com.example.p2pskillx"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDsDR8-vqECntFCf2EoBlhCn_5xeM-7Asg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
