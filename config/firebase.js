@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApp } from 'firebase/app';
-import { getReactNativePersistence, initializeAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
+import { enableIndexedDbPersistence, getFirestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -13,15 +13,44 @@ const firebaseConfig = {
   appId: "1:1056682056125:android:37e5cba384a1474a21dad4"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Initialize Firebase only if it hasn't been initialized yet
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Auth with persistence
-const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
-});
+// Initialize Auth with persistence, only if it hasn't been initialized
+let auth;
+try {
+  auth = getAuth(app);
+} catch (error) {
+  // If auth is not initialized yet, initialize it with persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+}
 
+// Initialize Firestore
 const db = getFirestore(app);
+
+// Enable offline persistence for Firestore
+try {
+  // Only enable persistence in production or when not in a web environment
+  if (process.env.NODE_ENV !== 'development' || typeof window === 'undefined') {
+    enableIndexedDbPersistence(db)
+      .then(() => {
+        console.log('Firestore offline persistence enabled');
+      })
+      .catch((error) => {
+        console.warn('Error enabling Firestore offline persistence:', error.code, error.message);
+        // Handle specific error cases
+        if (error.code === 'failed-precondition') {
+          console.warn('Multiple tabs open, persistence only enabled in one tab');
+        } else if (error.code === 'unimplemented') {
+          console.warn('Current environment does not support persistence');
+        }
+      });
+  }
+} catch (error) {
+  console.warn('Error setting up Firestore persistence:', error);
+}
 
 export { auth, db };
 export default app; 

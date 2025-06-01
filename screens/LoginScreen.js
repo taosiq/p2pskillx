@@ -1,4 +1,3 @@
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
     Alert,
@@ -11,7 +10,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth } from '../config/firebase';
+import { loginUser } from '../services/userService';
 
 const { height, width } = Dimensions.get('window');
 
@@ -28,11 +27,16 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      await signInWithEmailAndPassword(auth, email, password);
-      // Navigate to Dashboard on successful login
-      navigation.replace('Dashboard');
+      const result = await loginUser(email, password);
+      
+      if (result.success) {
+        // Navigate to Main screen which contains the drawer navigation
+        navigation.replace('Main');
+      } else {
+        Alert.alert('Login Failed', result.error || 'Invalid email or password');
+      }
     } catch (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', error.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

@@ -1,10 +1,58 @@
 import { Ionicons } from '@expo/vector-icons';
 import { DrawerContentScrollView, DrawerItemList } from '@react-navigation/drawer';
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth } from '../config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { auth, db } from '../config/firebase';
 
 const CustomDrawer = (props) => {
+  const [userEmail, setUserEmail] = useState('');
+  const [userName, setUserName] = useState('');
+  const [userInitials, setUserInitials] = useState('');
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    // Get the current user's data from Firebase
+    const fetchUserData = async () => {
+      setLoading(true);
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
+      
+      // Set email from auth object
+      setUserEmail(currentUser.email || '');
+      
+      try {
+        // Fetch additional user data from Firestore
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          // Set user name
+          const firstName = userData.firstName || '';
+          const lastName = userData.lastName || '';
+          const fullName = `${firstName} ${lastName}`.trim();
+          
+          setUserName(fullName || 'User');
+          
+          // Generate initials from first and last name
+          const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+          setUserInitials(initials || 'U');
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchUserData();
+  }, []);
+
   const handleLogout = async () => {
     try {
       await auth.signOut();
@@ -20,12 +68,20 @@ const CustomDrawer = (props) => {
   return (
     <View style={styles.container}>
       <DrawerContentScrollView {...props}>
-        <View style={styles.profileSection}>
-          <View style={styles.profileImageContainer}>
-            <Text style={styles.profileInitial}>J</Text>
-          </View>
-          <Text style={styles.userName}>John Doe</Text>
-          <Text style={styles.userEmail}>john@example.com</Text>
+        <View style={styles.userInfoSection}>
+          {loading ? (
+            <ActivityIndicator size="large" color="#2563EB" />
+          ) : (
+            <View style={styles.userInfo}>
+              <View style={styles.userAvatar}>
+                <Text style={styles.userInitials}>{userInitials}</Text>
+              </View>
+              <View style={styles.userDetails}>
+                <Text style={styles.userName}>{userName}</Text>
+                <Text style={styles.userEmail}>{userEmail}</Text>
+              </View>
+            </View>
+          )}
         </View>
         
         <View style={styles.drawerItems}>
@@ -47,25 +103,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  profileSection: {
+  userInfoSection: {
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     alignItems: 'center',
   },
-  profileImageContainer: {
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userAvatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
     backgroundColor: '#2563EB',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginRight: 10,
   },
-  profileInitial: {
+  userInitials: {
     fontSize: 32,
     color: 'white',
     fontWeight: 'bold',
+  },
+  userDetails: {
+    flexDirection: 'column',
   },
   userName: {
     fontSize: 18,

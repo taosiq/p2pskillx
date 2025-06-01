@@ -1,22 +1,19 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    KeyboardAvoidingView,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
-import { auth, db } from '../config/firebase';
+import { registerUser } from '../services/userService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -71,53 +68,46 @@ const SignUpScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      // Create user with email and password
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      // Save additional user data to Firestore
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {
+      
+      // Register user using our user service
+      const result = await registerUser({
         firstName,
         lastName,
         email,
         dateOfBirth,
         gender,
         occupation,
-        credits: 100, // Initial credits
-        createdAt: new Date().toISOString(),
+        password,
       });
-
-      // Show success message with credits information
-      Alert.alert(
-        'Success! 🎉',
-        'Account Successfully Created!\n100 credits have been awarded to you!',
-        [
-          {
+      
+      setLoading(false);
+      
+      if (result.success) {
+        // Show success message
+        Alert.alert(
+          'Success! 🎉',
+          'Account Successfully Created!\n100 credits have been awarded to you!',
+          [{ 
             text: 'OK',
-            onPress: () => {
-              // Navigate to Dashboard after user acknowledges
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Dashboard' }],
-              });
-            },
-          },
-        ],
-        { cancelable: false }
-      );
+            onPress: () => navigation.navigate('Login') 
+          }],
+          { cancelable: false }
+        );
+      } else {
+        // Show error message
+        Alert.alert('Error', result.error || 'Failed to create account');
+      }
     } catch (error) {
       console.error('Signup error:', error);
-      Alert.alert('Error', error.message);
-    } finally {
       setLoading(false);
+      Alert.alert('Error', error.message || 'An unexpected error occurred');
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior="height"
         style={styles.container}
       >
         <View style={styles.header}>
@@ -310,7 +300,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 40 : 0,
+    paddingTop: 40,
     paddingBottom: 10,
     backgroundColor: 'white',
     borderBottomWidth: 1,
@@ -400,7 +390,7 @@ const styles = StyleSheet.create({
   picker: {
     height: 48,
     width: '100%',
-    marginLeft: Platform.OS === 'android' ? -10 : 0,
+    marginLeft: -10,
     color: '#333',
   },
   signUpButton: {
