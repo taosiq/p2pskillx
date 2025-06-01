@@ -1,12 +1,13 @@
 // apiKeyManager.js - A utility to manage API keys at runtime
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OPENROUTER_API_KEY } from '../api-keys'; // Import from secure file
 
 // Keys for storing API information
 const API_KEY_STORAGE_KEY = '@api_key';
 const API_URL_STORAGE_KEY = '@api_url';
 
 // Default OpenRouter values
-const DEFAULT_API_KEY = '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'; // Updated OpenRouter key
+const DEFAULT_API_KEY = OPENROUTER_API_KEY; // Use imported key
 const DEFAULT_API_URL = 'https://openrouter.ai/api/v1';
 
 // Get the API key (from storage or default)

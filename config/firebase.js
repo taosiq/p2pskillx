@@ -2,10 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
 import { enableIndexedDbPersistence, getFirestore } from 'firebase/firestore';
+import { FIREBASE_API_KEY } from '../api-keys'; // Import API key from secure file
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyDsDR8-vqECntFCf2EoBlhCn_5xeM-7Asg",
+  apiKey: FIREBASE_API_KEY,
   authDomain: "p2pskillx-e5c83.firebaseapp.com",
   projectId: "p2pskillx-e5c83",
   storageBucket: "p2pskillx-e5c83.appspot.com",

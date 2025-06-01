@@ -35,3 +35,10 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# API keys and credentials
+.env.local
+api-keys.js
+secrets.js
+credentials.json
+google-services.json

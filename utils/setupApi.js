@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OPENROUTER_API_KEY } from '../api-keys'; // Import from secure file
 
-// Your OpenRouter API key - REPLACE THIS with your actual API key
-const OPENROUTER_API_KEY = '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';
+// API URL
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1';
 
 // Keys for storing API information

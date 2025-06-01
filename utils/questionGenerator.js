@@ -389,8 +389,8 @@ export const generateQuestions = async (skill, forceRefresh = true) => {
 // Generate questions using OpenRouter API (provides access to DeepSeek and other models)
 export const generateOpenRouterQuestions = async (skill) => {
   try {
-    // Get API key and URL directly from setupApi.js to avoid any circular dependencies
-    const OPENROUTER_API_KEY = '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';
+    // Import API key from secure file
+    const { OPENROUTER_API_KEY } = require('../api-keys');
     const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
     
     // Check if API key exists
