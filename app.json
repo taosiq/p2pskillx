@@ -18,8 +18,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2F6BFF"
       },
-      "package": "com.taosiq.p2pskillx",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.taosiq.p2pskillx"
     },
     "web": {
       "favicon": "./assets/favicon.png"
