@@ -1,4 +1,4 @@
-import { createUserWithEmailAndPassword, deleteUser, EmailAuthProvider, reauthenticateWithCredential, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, deleteUser, EmailAuthProvider, reauthenticateWithCredential, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, increment, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
@@ -32,6 +32,9 @@ export const registerUser = async (userData) => {
     });
     batch.set(doc(db, 'users', uid, 'private', 'details'), { email, dateOfBirth, gender, createdAt: now });
     await batch.commit();
+
+    // Confirm the address belongs to them before they can trade credits or post.
+    await sendEmailVerification(userCredential.user).catch((e) => console.warn('Verification email failed:', e?.code));
 
     return { success: true, uid };
   } catch (error) {
@@ -95,6 +98,18 @@ export const sendPasswordReset = async (email) => {
     }
   }
   return { success: true };
+};
+
+// Send (or re-send) the email-verification link to the signed-in user.
+export const resendVerificationEmail = async () => {
+  const current = auth.currentUser;
+  if (!current) return { success: false, code: 'auth/no-current-user' };
+  try {
+    await sendEmailVerification(current);
+    return { success: true };
+  } catch (error) {
+    return { success: false, code: error?.code };
+  }
 };
 
 // Get current user data

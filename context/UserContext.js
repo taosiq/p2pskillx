@@ -1,4 +1,4 @@
-import { onAuthStateChanged, signOut as fbSignOut } from 'firebase/auth';
+import { onAuthStateChanged, reload, signOut as fbSignOut } from 'firebase/auth';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db } from '../config/firebase';
@@ -17,6 +17,7 @@ const UserContext = createContext(null);
  */
 export function UserProvider({ children }) {
   const [user, setUser] = useState(auth.currentUser);
+  const [emailVerified, setEmailVerified] = useState(!!auth.currentUser?.emailVerified);
   const [initializing, setInitializing] = useState(true);
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(!!auth.currentUser);
@@ -27,6 +28,7 @@ export function UserProvider({ children }) {
     () =>
       onAuthStateChanged(auth, (u) => {
         setUser(u);
+        setEmailVerified(!!u?.emailVerified);
         setInitializing(false);
         if (!u) {
           lastLevel.current = null;
@@ -58,9 +60,23 @@ export function UserProvider({ children }) {
 
   // One-time privacy clean-up of posts made by older app versions.
   useEffect(() => {
-    if (!user) return;
+    if (!user || !emailVerified) return;
     removeEmailFromMyPosts().catch(() => {});
-  }, [user?.uid]);
+  }, [user?.uid, emailVerified]);
+
+  /**
+   * Re-check whether the user has clicked the link in the verification email.
+   * On success the ID token is refreshed so the server and the database rules
+   * see the verified address straight away.
+   */
+  const refreshVerification = useCallback(async () => {
+    const current = auth.currentUser;
+    if (!current) return false;
+    await reload(current);
+    if (current.emailVerified) await current.getIdToken(true);
+    setEmailVerified(!!current.emailVerified);
+    return !!current.emailVerified;
+  }, []);
 
   const game = useMemo(() => (profile ? gamificationFor(profile) : null), [profile]);
 
@@ -81,7 +97,7 @@ export function UserProvider({ children }) {
   // can't be faked); without it the app writes them itself.
   const lastSync = useRef(0);
   useEffect(() => {
-    if (!user || !profile || !game || writing.current) return;
+    if (!user || !emailVerified || !profile || !game || writing.current) return;
 
     const activity = nextActivity(profile.activity || {}, dayKey());
     const { level, tier } = game.level;
@@ -125,7 +141,7 @@ export function UserProvider({ children }) {
       .finally(() => {
         writing.current = false;
       });
-  }, [user, profile, game]);
+  }, [user, emailVerified, profile, game]);
 
   const dismissCelebration = useCallback(() => setQueue((q) => q.slice(1)), []);
 
@@ -136,6 +152,8 @@ export function UserProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
+      emailVerified,
+      refreshVerification,
       profile,
       game,
       initializing,
@@ -147,7 +165,7 @@ export function UserProvider({ children }) {
         ? [profile.firstName, profile.lastName].filter(Boolean).join(' ') || user?.email?.split('@')[0] || 'Learner'
         : user?.email?.split('@')[0] || 'Learner',
     }),
-    [user, profile, game, initializing, profileLoading, queue, dismissCelebration, signOut]
+    [user, emailVerified, refreshVerification, profile, game, initializing, profileLoading, queue, dismissCelebration, signOut]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

@@ -358,6 +358,8 @@ async function accountCleanup(env, fs, uid) {
 
 // ---------------------------------------------------------------- router
 
+const OPEN_TO_UNVERIFIED = new Set(['/v1/account/cleanup']);
+
 const ROUTES = {
   '/v1/quiz/start': quizStart,
   '/v1/quiz/submit': quizSubmit,
@@ -379,7 +381,12 @@ export default {
       for (const k of ['FIREBASE_SERVICE_ACCOUNT', 'QUIZ_SECRET', 'OPENROUTER_API_KEY']) {
         if (!env[k]) throw new HttpError(500, 'misconfigured', `Server secret ${k} is not set.`);
       }
-      const { uid } = await verifyFirebaseToken(request, env.FIREBASE_PROJECT_ID);
+      const { uid, emailVerified } = await verifyFirebaseToken(request, env.FIREBASE_PROJECT_ID);
+      // A verified email is required for anything involving credits, skills or XP.
+      // Account deletion is always allowed.
+      if (!emailVerified && !OPEN_TO_UNVERIFIED.has(url.pathname)) {
+        throw new HttpError(403, 'email_unverified', 'Please verify your email address first.');
+      }
       const body = await readBody(request);
       const fs = new Firestore(env);
       return json(await handler(env, fs, uid, body));

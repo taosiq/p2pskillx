@@ -46,6 +46,7 @@ import SkillVerificationMCQScreen from './screens/SkillVerificationMCQScreen';
 import SkillVerificationResultsScreen from './screens/SkillVerificationResultsScreen';
 import UserManualScreen from './screens/UserManualScreen';
 import UsersListScreen from './screens/UsersListScreen';
+import VerifyEmailScreen from './screens/VerifyEmailScreen';
 import { ThemeProvider, useTheme } from './theme';
 import { apiConfigured } from './services/api';
 import { setupApiKey } from './utils/setupApi';
@@ -69,6 +70,12 @@ function MainTabs() {
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
+}
+
+// Everything behind sign-in starts at "Main", so an unverified email stops here.
+function MainGate(props) {
+  const { emailVerified } = useUser();
+  return emailVerified ? <MainTabs {...props} /> : <VerifyEmailScreen {...props} />;
 }
 
 function RootNavigator() {
@@ -107,7 +114,7 @@ function RootNavigator() {
       >
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignUp" component={SignUpScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="Main" component={MainGate} />
         <Stack.Screen name="UserProfile" component={ProfileScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />

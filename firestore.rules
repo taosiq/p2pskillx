@@ -16,6 +16,9 @@ service cloud.firestore {
     // ---------- helpers ----------
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
+    // Confirmed email address (see the app's "Verify your email" screen). Needed for
+    // anything that reaches other people, so throwaway accounts can't be used for spam.
+    function verified() { return request.auth.token.email_verified == true; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
     function onlyChanges(keys) { return changed().hasOnly(keys); }
     function str(v, max) { return v is string && v.size() <= max; }
@@ -80,7 +83,7 @@ service cloud.firestore {
             || (request.resource.data.profileImage is string && request.resource.data.profileImage.size() < 360000));
 
       // Someone else follows / unfollows this user: only their own uid, count +/- 1.
-      allow update: if signedIn() && me() != uid
+      allow update: if signedIn() && verified() && me() != uid
         && onlyChanges(['followers', 'followersCount'])
         && ((addedOnlyMe('followers') && countMovedBy('followersCount', 1))
             || (removedOnlyMe('followers') && countMovedBy('followersCount', -1)));
@@ -116,7 +119,7 @@ service cloud.firestore {
       allow read: if signedIn();
 
       // Only on a skill the instructor has verified, starting with empty counters.
-      allow create: if signedIn()
+      allow create: if signedIn() && verified()
         && request.resource.data.creatorId == me()
         && request.resource.data.enrollments == 0
         && request.resource.data.get('ratingAvg', 0) == 0
@@ -148,7 +151,7 @@ service cloud.firestore {
       // One review per enrolled learner.
       match /reviews/{reviewerId} {
         allow read: if signedIn();
-        allow create, update: if signedIn() && reviewerId == me() && enrolledIn(courseId)
+        allow create, update: if signedIn() && verified() && reviewerId == me() && enrolledIn(courseId)
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
           && str(request.resource.data.get('text', ''), 500)
@@ -161,7 +164,7 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if signedIn();
 
-      allow create: if signedIn()
+      allow create: if signedIn() && verified()
         && request.resource.data.userId == me()
         && request.resource.data.keys().hasOnly(['userId', 'userName', 'userInitials', 'userProfileImage', 'text', 'image',
                                                  'likes', 'comments', 'createdAt', 'updatedAt'])
@@ -175,10 +178,10 @@ service cloud.firestore {
         && !changed().hasAny(['userId', 'likes', 'createdAt']);
 
       // Anyone can like/unlike (only their own uid) or append one comment as themselves.
-      allow update: if signedIn() && onlyChanges(['likes'])
+      allow update: if signedIn() && verified() && onlyChanges(['likes'])
         && (addedOnlyMe('likes') || removedOnlyMe('likes'));
       // Existing comments must stay exactly as they were.
-      allow update: if signedIn() && onlyChanges(['comments', 'updatedAt'])
+      allow update: if signedIn() && verified() && onlyChanges(['comments', 'updatedAt'])
         && newList('comments').size() == listOrEmpty('comments').size() + 1
         && newList('comments')[0:listOrEmpty('comments').size()] == listOrEmpty('comments')
         && newList('comments')[newList('comments').size() - 1].userId == me()
@@ -202,7 +205,7 @@ service cloud.firestore {
       allow read: if signedIn() && (resource == null || me() in resource.data.participants);
 
       // New chats use the id "<uidA>_<uidB>", so nobody can take over another pair's chat id.
-      allow create: if signedIn()
+      allow create: if signedIn() && verified()
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
         && me() in request.resource.data.participants
@@ -216,7 +219,7 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if signedIn() && participant(convId);
         // Blocked users can't send messages to the person who blocked them.
-        allow create: if signedIn() && participant(convId)
+        allow create: if signedIn() && verified() && participant(convId)
           && request.resource.data.senderId == me()
           && str(request.resource.data.text, 2000)
           && notBlockedBy(get(/databases/$(database)/documents/conversations/$(convId)).data.participants.removeAll([me()])[0]);
@@ -237,7 +240,7 @@ service cloud.firestore {
       allow read: if signedIn() && resource.data.recipientId == me();
       // Users can only send social notifications as themselves. Credit and system
       // notifications come only from the server.
-      allow create: if signedIn()
+      allow create: if signedIn() && verified()
         && request.resource.data.senderId == me()
         && request.resource.data.recipientId is string
         && request.resource.data.recipientId != me()
@@ -257,7 +260,7 @@ service cloud.firestore {
     }
 
     match /reports/{id} {
-      allow create: if signedIn()
+      allow create: if signedIn() && verified()
         && request.resource.data.reporterId == me()
         && request.resource.data.reason in ['spam', 'harassment', 'inappropriate', 'misinformation', 'other']
         && str(request.resource.data.get('details', ''), 500);

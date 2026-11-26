@@ -23,7 +23,8 @@ import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, describe, test } from 'node:test';
 
 let env;
-const db = (uid) => env.authenticatedContext(uid).firestore();
+const db = (uid) => env.authenticatedContext(uid, { email_verified: true }).firestore();
+const unverified = (uid) => env.authenticatedContext(uid, { email_verified: false }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 const now = new Date().toISOString();
 
@@ -218,6 +219,19 @@ describe('allowed: what the app does', () => {
 // ------------------------------------------------------------------ blocked
 
 describe('blocked: attacks', () => {
+  test('an unverified email can sign up and edit its profile, but not reach other people', async () => {
+    const u = unverified('newbie');
+    await assertSucceeds(setDoc(doc(u, 'users/newbie'), profile('Newbie')));
+    await assertSucceeds(updateDoc(doc(u, 'users/newbie'), { bio: 'Hello' }));
+    await assertFails(setDoc(doc(u, 'posts/spam'), post('newbie')));
+    await assertFails(updateDoc(doc(u, 'posts/p1'), { likes: arrayUnion('newbie') }));
+    await assertFails(updateDoc(doc(u, 'posts/p1'), { comments: arrayUnion(comment('newbie')) }));
+    await assertFails(setDoc(doc(u, 'conversations/alice_newbie'), { participants: ['newbie', 'alice'] }));
+    await assertFails(setDoc(doc(u, 'notifications/spam'), { type: 'post_like', recipientId: 'alice', senderId: 'newbie', read: false }));
+    await assertFails(updateDoc(doc(u, 'users/alice'), { followers: arrayUnion('newbie'), followersCount: increment(1) }));
+    await assertFails(setDoc(doc(u, 'reports/r9'), { reporterId: 'newbie', reason: 'spam', details: '' }));
+  });
+
   test('no access without signing in', async () => {
     await assertFails(getDoc(doc(anon(), 'users/alice')));
     await assertFails(getDoc(doc(anon(), 'posts/p1')));
