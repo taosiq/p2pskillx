@@ -1,0 +1,212 @@
+rules_version = '2';
+
+// P2PSkillX security rules.
+//
+// Trust model: anything with value (credits, XP, level, verified skills,
+// enrolments, tier rewards) is written ONLY by the secure backend
+// (backend/, admin access, bypasses these rules). Clients may edit their own
+// profile details, social graph and progress, under the checks below.
+//
+// Deploy these together with the backend (see backend/README.md). Before the
+// backend is live, the app's fallback mode needs the old, looser rules.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function onlyChanges(keys) { return changed().hasOnly(keys); }
+    function str(v, max) { return v is string && v.size() <= max; }
+    function listOrEmpty(field) { return resource.data.get(field, []); }
+    function newList(field) { return request.resource.data.get(field, []); }
+
+    // A list gained exactly one element, the caller's uid.
+    function addedOnlyMe(field) {
+      return newList(field).toSet().difference(listOrEmpty(field).toSet()) == [me()].toSet()
+        && listOrEmpty(field).toSet().difference(newList(field).toSet()).size() == 0;
+    }
+    // A list lost exactly one element, the caller's uid.
+    function removedOnlyMe(field) {
+      return listOrEmpty(field).toSet().difference(newList(field).toSet()) == [me()].toSet()
+        && newList(field).toSet().difference(listOrEmpty(field).toSet()).size() == 0;
+    }
+    function countMovedBy(field, delta) {
+      return request.resource.data.get(field, 0) == resource.data.get(field, 0) + delta;
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      // Profiles are visible to signed-in users (the app only shows public fields).
+      allow read: if signedIn();
+
+      // Sign-up: starting balance and progress are fixed.
+      allow create: if signedIn() && me() == uid
+        && request.resource.data.get('credits', 0) == 100
+        && request.resource.data.get('xp', 0) == 0
+        && request.resource.data.get('level', 1) == 1
+        && !request.resource.data.keys().hasAny(['verifiedSkills', 'enrolledCourses', 'claimedTiers', 'teachingCount', 'followers', 'followersCount'])
+        && str(request.resource.data.get('firstName', ''), 40)
+        && str(request.resource.data.get('lastName', ''), 40);
+
+      // Owner edits: never the server-owned fields; followers may only shrink.
+      allow update: if signedIn() && me() == uid
+        && !changed().hasAny(['credits', 'xp', 'level', 'badgeType', 'verifiedSkills', 'enrolledCourses',
+                              'claimedTiers', 'teachingCount', 'activity', 'skills', 'email', 'createdAt'])
+        && (!changed().hasAny(['followers']) || newList('followers').size() <= listOrEmpty('followers').size())
+        && (!changed().hasAny(['followersCount']) || request.resource.data.get('followersCount', 0) <= resource.data.get('followersCount', 0))
+        && str(request.resource.data.get('bio', ''), 200)
+        && str(request.resource.data.get('firstName', ''), 40)
+        && str(request.resource.data.get('lastName', ''), 40)
+        && (!changed().hasAny(['profileImage']) || request.resource.data.profileImage == null
+            || (request.resource.data.profileImage is string && request.resource.data.profileImage.size() < 360000));
+
+      // Someone else follows / unfollows this user: only their own uid, count +/- 1.
+      allow update: if signedIn() && me() != uid
+        && onlyChanges(['followers', 'followersCount'])
+        && ((addedOnlyMe('followers') && countMovedBy('followersCount', 1))
+            || (removedOnlyMe('followers') && countMovedBy('followersCount', -1)));
+
+      // This user removes a follower: that follower's "following" loses this user's uid.
+      allow update: if signedIn() && me() != uid
+        && onlyChanges(['following', 'followingCount'])
+        && removedOnlyMe('following') && countMovedBy('followingCount', -1);
+
+      allow delete: if signedIn() && me() == uid;
+
+      // Sensitive details (email, date of birth, gender): owner only.
+      match /private/{docId} {
+        allow read, write: if signedIn() && me() == uid;
+      }
+    }
+
+    // ---------- courses ----------
+    function enrolledIn(courseId) {
+      return courseId in get(/databases/$(database)/documents/users/$(me())).data.get('enrolledCourses', {});
+    }
+
+    match /courses/{courseId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.creatorId == me()
+        && request.resource.data.enrollments == 0
+        && request.resource.data.get('ratingAvg', 0) == 0
+        && str(request.resource.data.title, 90)
+        && request.resource.data.credits is int
+        && request.resource.data.credits >= 5 && request.resource.data.credits <= 500
+        && request.resource.data.get('status', 'active') == 'active';
+
+      // Instructors edit their listing, but not price-paid history or counters.
+      allow update: if signedIn() && resource.data.creatorId == me()
+        && !changed().hasAny(['creatorId', 'enrollments', 'credits', 'ratingAvg', 'ratingCount', 'createdAt'])
+        && (!changed().hasAny(['title']) || str(request.resource.data.title, 90));
+
+      // Only courses nobody has paid for can be deleted (otherwise archive).
+      allow delete: if signedIn() && resource.data.creatorId == me() && resource.data.get('enrollments', 0) == 0;
+
+      // Paid lessons: instructor and enrolled learners only.
+      match /private/{docId} {
+        allow read: if signedIn()
+          && (get(/databases/$(database)/documents/courses/$(courseId)).data.creatorId == me() || enrolledIn(courseId));
+        allow write: if signedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.creatorId == me();
+      }
+
+      // One review per enrolled learner.
+      match /reviews/{reviewerId} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && reviewerId == me() && enrolledIn(courseId)
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && str(request.resource.data.get('text', ''), 500)
+          && request.resource.data.userId == me();
+        allow delete: if signedIn() && reviewerId == me();
+      }
+    }
+
+    // ---------- posts ----------
+    match /posts/{postId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.userId == me()
+        && request.resource.data.likes.size() == 0
+        && request.resource.data.comments.size() == 0
+        && str(request.resource.data.text, 1000)
+        && (request.resource.data.get('image', null) == null
+            || (request.resource.data.image is string && request.resource.data.image.size() < 800000));
+
+      allow update: if signedIn() && resource.data.userId == me()
+        && !changed().hasAny(['userId', 'likes', 'createdAt']);
+
+      // Anyone can like/unlike (only their own uid) or append one comment as themselves.
+      allow update: if signedIn() && onlyChanges(['likes'])
+        && (addedOnlyMe('likes') || removedOnlyMe('likes'));
+      allow update: if signedIn() && onlyChanges(['comments', 'updatedAt'])
+        && newList('comments').size() == listOrEmpty('comments').size() + 1
+        && newList('comments')[newList('comments').size() - 1].userId == me()
+        && str(newList('comments')[newList('comments').size() - 1].text, 500);
+
+      allow delete: if signedIn() && resource.data.userId == me();
+    }
+
+    // ---------- chat ----------
+    function participant(convId) {
+      return me() in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+    }
+
+    match /conversations/{convId} {
+      allow read: if signedIn() && me() in resource.data.participants;
+      allow create: if signedIn()
+        && me() in request.resource.data.participants
+        && request.resource.data.participants.size() == 2;
+      allow update: if signedIn() && me() in resource.data.participants
+        && !changed().hasAny(['participants', 'createdAt']);
+
+      match /messages/{messageId} {
+        allow read: if signedIn() && participant(convId);
+        allow create: if signedIn() && participant(convId)
+          && request.resource.data.senderId == me()
+          && str(request.resource.data.text, 2000);
+        allow update, delete: if signedIn() && resource.data.senderId == me();
+      }
+    }
+
+    // Legacy flat messages collection (read-only history).
+    match /messages/{messageId} {
+      allow read: if signedIn() && participant(resource.data.conversationId);
+      allow write: if false;
+    }
+
+    // ---------- notifications ----------
+    match /notifications/{id} {
+      allow read: if signedIn() && resource.data.recipientId == me();
+      allow create: if signedIn()
+        && request.resource.data.senderId == me()
+        && request.resource.data.recipientId is string
+        && request.resource.data.get('read', false) == false
+        && !request.resource.data.keys().hasAny(['creditsAmount']);
+      allow update: if signedIn() && resource.data.recipientId == me() && onlyChanges(['read']);
+      allow delete: if signedIn() && resource.data.recipientId == me();
+    }
+
+    // ---------- money & moderation ----------
+    match /transactions/{id} {
+      allow read: if signedIn() && resource.data.userId == me();
+      allow write: if false; // server only
+    }
+
+    match /reports/{id} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == me()
+        && request.resource.data.reason in ['spam', 'harassment', 'inappropriate', 'misinformation', 'other']
+        && str(request.resource.data.get('details', ''), 500);
+      allow read, update, delete: if false; // reviewed in the Firebase console
+    }
+
+    // Server bookkeeping (rate limits, single-use quiz results).
+    match /serverState/{uid} { allow read, write: if false; }
+    match /quizResults/{id} { allow read, write: if false; }
+  }
+}

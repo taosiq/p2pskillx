@@ -1,0 +1,16 @@
+name = "p2pskillx-api"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+FIREBASE_PROJECT_ID = "p2pskillx-e5c83"
+# Free OpenRouter models, tried in order (max 3).
+AI_MODELS = "baidu/ernie-5.5-flash-preview:free,nvidia/nemotron-3.5-super-vl:free,google/gemma-4-31b-it:free"
+QUIZ_STARTS_PER_DAY = "20"
+FAIL_COOLDOWN_MINUTES = "10"
+INSTRUCTOR_SHARE = "0.8"
+
+# Secrets (set with `npx wrangler secret put NAME`, never committed):
+#   OPENROUTER_API_KEY        your OpenRouter key
+#   FIREBASE_SERVICE_ACCOUNT  the whole service-account JSON (one line)
+#   QUIZ_SECRET               any long random string (encrypts quiz answer keys)

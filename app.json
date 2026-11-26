@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "P2PSkillX",
+    "slug": "p2pskillx",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.taosiq.p2pskillx"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2F6BFF"
+      },
+      "package": "com.taosiq.p2pskillx",
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      "expo-status-bar",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#F2F6FF",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#050A17"
+          }
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "extra": {
+      "apiUrl": ""
+    }
+  }
+}
