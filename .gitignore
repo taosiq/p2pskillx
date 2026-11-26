@@ -46,3 +46,6 @@ sensitive.txt
 *.jar
 android/app/.gradle/
 android/.gradle/
+
+# Firebase emulator logs
+*-debug.log

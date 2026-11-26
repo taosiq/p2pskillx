@@ -4,6 +4,7 @@ import {
     arrayUnion,
     collection,
     deleteDoc,
+    deleteField,
     doc,
     getDoc,
     getDocs,
@@ -46,7 +47,6 @@ export const createPost = async (postData) => {
     // Create the post object
     const newPost = {
       userId: currentUser.uid,
-      userEmail: currentUser.email,
       userName: `${firstName} ${lastName}`.trim() || 'User',
       userInitials: initials,
       userProfileImage: profileImage,
@@ -457,3 +457,16 @@ export const unblockUser = async (targetUserId) => {
 };
 
 export { getTimeAgo };
+
+/**
+ * Older versions of the app saved the author's email on each post, where every
+ * signed-in user could read it. Remove it from the current user's own posts.
+ */
+export const removeEmailFromMyPosts = async () => {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return 0;
+  const snap = await getDocs(query(collection(db, 'posts'), where('userId', '==', uid)));
+  const legacy = snap.docs.filter((d) => d.data().userEmail !== undefined);
+  await Promise.all(legacy.map((d) => updateDoc(d.ref, { userEmail: deleteField() })));
+  return legacy.length;
+};

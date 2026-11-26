@@ -37,28 +37,45 @@ service cloud.firestore {
     }
 
     // ---------- users ----------
+    // Verified skills come only from the server; the owner may remove one, never add or change one.
+    function onlyRemovesSkills() {
+      let before = resource.data.get('verifiedSkills', {});
+      let after = request.resource.data.get('verifiedSkills', {});
+      return after.diff(before).addedKeys().size() == 0
+        && after.diff(before).changedKeys().size() == 0
+        && newList('skills').toSet().difference(listOrEmpty('skills').toSet()).size() == 0;
+    }
+
     match /users/{uid} {
-      // Profiles are visible to signed-in users (the app only shows public fields).
+      // Profiles are visible to signed-in users (private details live in /private).
       allow read: if signedIn();
 
-      // Sign-up: starting balance and progress are fixed.
+      // Sign-up: only the sign-up fields, with a fixed starting balance. A deleted
+      // account can't be re-created to collect another starting balance.
       allow create: if signedIn() && me() == uid
-        && request.resource.data.get('credits', 0) == 100
+        && !exists(/databases/$(database)/documents/deletedAccounts/$(uid))
+        && request.resource.data.keys().hasOnly(['firstName', 'lastName', 'occupation', 'credits', 'xp', 'level',
+                                                 'badgeType', 'createdAt', 'updatedAt'])
+        && request.resource.data.credits == 100
         && request.resource.data.get('xp', 0) == 0
         && request.resource.data.get('level', 1) == 1
-        && !request.resource.data.keys().hasAny(['verifiedSkills', 'enrolledCourses', 'claimedTiers', 'teachingCount', 'followers', 'followersCount'])
+        && request.resource.data.get('badgeType', 'Bronze') == 'Bronze'
         && str(request.resource.data.get('firstName', ''), 40)
-        && str(request.resource.data.get('lastName', ''), 40);
+        && str(request.resource.data.get('lastName', ''), 40)
+        && str(request.resource.data.get('occupation', ''), 80);
 
       // Owner edits: never the server-owned fields; followers may only shrink.
       allow update: if signedIn() && me() == uid
-        && !changed().hasAny(['credits', 'xp', 'level', 'badgeType', 'verifiedSkills', 'enrolledCourses',
-                              'claimedTiers', 'teachingCount', 'activity', 'skills', 'email', 'createdAt'])
+        && !changed().hasAny(['credits', 'xp', 'level', 'badgeType', 'enrolledCourses',
+                              'claimedTiers', 'teachingCount', 'activity', 'email', 'createdAt'])
+        && (!changed().hasAny(['verifiedSkills', 'skills']) || onlyRemovesSkills())
         && (!changed().hasAny(['followers']) || newList('followers').size() <= listOrEmpty('followers').size())
         && (!changed().hasAny(['followersCount']) || request.resource.data.get('followersCount', 0) <= resource.data.get('followersCount', 0))
         && str(request.resource.data.get('bio', ''), 200)
         && str(request.resource.data.get('firstName', ''), 40)
         && str(request.resource.data.get('lastName', ''), 40)
+        && (!changed().hasAny(['following']) || newList('following').size() <= 2000)
+        && (!changed().hasAny(['blocked']) || newList('blocked').size() <= 1000)
         && (!changed().hasAny(['profileImage']) || request.resource.data.profileImage == null
             || (request.resource.data.profileImage is string && request.resource.data.profileImage.size() < 360000));
 
@@ -73,7 +90,8 @@ service cloud.firestore {
         && onlyChanges(['following', 'followingCount'])
         && removedOnlyMe('following') && countMovedBy('followingCount', -1);
 
-      allow delete: if signedIn() && me() == uid;
+      // Profiles are deleted by the server during account deletion (see /v1/account/cleanup).
+      allow delete: if false;
 
       // Sensitive details (email, date of birth, gender): owner only.
       match /private/{docId} {
@@ -86,31 +104,45 @@ service cloud.firestore {
       return courseId in get(/databases/$(database)/documents/users/$(me())).data.get('enrolledCourses', {});
     }
 
+    function coursePath(courseId) { return /databases/$(database)/documents/courses/$(courseId); }
+    // Is the caller this course's instructor? Checks the state before and after the
+    // write, so it works inside the batch that creates or deletes the course itself.
+    function teaches(courseId) {
+      return (exists(coursePath(courseId)) && get(coursePath(courseId)).data.creatorId == me())
+        || (existsAfter(coursePath(courseId)) && getAfter(coursePath(courseId)).data.creatorId == me());
+    }
+
     match /courses/{courseId} {
       allow read: if signedIn();
 
+      // Only on a skill the instructor has verified, starting with empty counters.
       allow create: if signedIn()
         && request.resource.data.creatorId == me()
         && request.resource.data.enrollments == 0
         && request.resource.data.get('ratingAvg', 0) == 0
+        && request.resource.data.get('ratingCount', 0) == 0
         && str(request.resource.data.title, 90)
         && request.resource.data.credits is int
         && request.resource.data.credits >= 5 && request.resource.data.credits <= 500
-        && request.resource.data.get('status', 'active') == 'active';
+        && request.resource.data.get('status', 'active') == 'active'
+        && request.resource.data.skills is list && request.resource.data.skills.size() == 1
+        && request.resource.data.skills[0] in get(/databases/$(database)/documents/users/$(me())).data.get('verifiedSkills', {})
+        && (request.resource.data.get('thumbnail', null) == null
+            || (request.resource.data.thumbnail is string && request.resource.data.thumbnail.size() < 400000));
 
       // Instructors edit their listing, but not price-paid history or counters.
       allow update: if signedIn() && resource.data.creatorId == me()
-        && !changed().hasAny(['creatorId', 'enrollments', 'credits', 'ratingAvg', 'ratingCount', 'createdAt'])
-        && (!changed().hasAny(['title']) || str(request.resource.data.title, 90));
+        && !changed().hasAny(['creatorId', 'enrollments', 'credits', 'ratingAvg', 'ratingCount', 'createdAt', 'skills'])
+        && (!changed().hasAny(['title']) || str(request.resource.data.title, 90))
+        && request.resource.data.get('status', 'active') in ['active', 'archived'];
 
       // Only courses nobody has paid for can be deleted (otherwise archive).
       allow delete: if signedIn() && resource.data.creatorId == me() && resource.data.get('enrollments', 0) == 0;
 
       // Paid lessons: instructor and enrolled learners only.
       match /private/{docId} {
-        allow read: if signedIn()
-          && (get(/databases/$(database)/documents/courses/$(courseId)).data.creatorId == me() || enrolledIn(courseId));
-        allow write: if signedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.creatorId == me();
+        allow read: if signedIn() && (teaches(courseId) || enrolledIn(courseId));
+        allow write: if signedIn() && teaches(courseId);
       }
 
       // One review per enrolled learner.
@@ -131,6 +163,8 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.resource.data.userId == me()
+        && request.resource.data.keys().hasOnly(['userId', 'userName', 'userInitials', 'userProfileImage', 'text', 'image',
+                                                 'likes', 'comments', 'createdAt', 'updatedAt'])
         && request.resource.data.likes.size() == 0
         && request.resource.data.comments.size() == 0
         && str(request.resource.data.text, 1000)
@@ -143,8 +177,10 @@ service cloud.firestore {
       // Anyone can like/unlike (only their own uid) or append one comment as themselves.
       allow update: if signedIn() && onlyChanges(['likes'])
         && (addedOnlyMe('likes') || removedOnlyMe('likes'));
+      // Existing comments must stay exactly as they were.
       allow update: if signedIn() && onlyChanges(['comments', 'updatedAt'])
         && newList('comments').size() == listOrEmpty('comments').size() + 1
+        && newList('comments')[0:listOrEmpty('comments').size()] == listOrEmpty('comments')
         && newList('comments')[newList('comments').size() - 1].userId == me()
         && str(newList('comments')[newList('comments').size() - 1].text, 500);
 
@@ -155,21 +191,38 @@ service cloud.firestore {
     function participant(convId) {
       return me() in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
     }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    // True if `uid` has NOT blocked the caller.
+    function notBlockedBy(uid) {
+      return !exists(userPath(uid)) || !(me() in get(userPath(uid)).data.get('blocked', []));
+    }
 
     match /conversations/{convId} {
-      allow read: if signedIn() && me() in resource.data.participants;
+      // A missing chat may be looked up (to find out it doesn't exist yet).
+      allow read: if signedIn() && (resource == null || me() in resource.data.participants);
+
+      // New chats use the id "<uidA>_<uidB>", so nobody can take over another pair's chat id.
       allow create: if signedIn()
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
         && me() in request.resource.data.participants
-        && request.resource.data.participants.size() == 2;
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && (convId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1]
+            || convId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0])
+        && notBlockedBy(request.resource.data.participants.removeAll([me()])[0]);
       allow update: if signedIn() && me() in resource.data.participants
         && !changed().hasAny(['participants', 'createdAt']);
 
       match /messages/{messageId} {
         allow read: if signedIn() && participant(convId);
+        // Blocked users can't send messages to the person who blocked them.
         allow create: if signedIn() && participant(convId)
           && request.resource.data.senderId == me()
-          && str(request.resource.data.text, 2000);
-        allow update, delete: if signedIn() && resource.data.senderId == me();
+          && str(request.resource.data.text, 2000)
+          && notBlockedBy(get(/databases/$(database)/documents/conversations/$(convId)).data.participants.removeAll([me()])[0]);
+        allow update: if signedIn() && resource.data.senderId == me()
+          && onlyChanges(['text', 'edited', 'editedAt']) && str(request.resource.data.text, 2000);
+        allow delete: if signedIn() && resource.data.senderId == me();
       }
     }
 
@@ -182,11 +235,17 @@ service cloud.firestore {
     // ---------- notifications ----------
     match /notifications/{id} {
       allow read: if signedIn() && resource.data.recipientId == me();
+      // Users can only send social notifications as themselves. Credit and system
+      // notifications come only from the server.
       allow create: if signedIn()
         && request.resource.data.senderId == me()
         && request.resource.data.recipientId is string
+        && request.resource.data.recipientId != me()
+        && request.resource.data.type in ['post_like', 'post_comment', 'user_follow', 'following_post', 'following_course', 'course_enrollment']
         && request.resource.data.get('read', false) == false
-        && !request.resource.data.keys().hasAny(['creditsAmount']);
+        && !request.resource.data.keys().hasAny(['creditsAmount', 'systemNotification'])
+        && str(request.resource.data.get('senderName', ''), 90)
+        && notBlockedBy(request.resource.data.recipientId);
       allow update: if signedIn() && resource.data.recipientId == me() && onlyChanges(['read']);
       allow delete: if signedIn() && resource.data.recipientId == me();
     }
@@ -207,6 +266,7 @@ service cloud.firestore {
 
     // Server bookkeeping (rate limits, single-use quiz results).
     match /serverState/{uid} { allow read, write: if false; }
+    match /deletedAccounts/{uid} { allow read, write: if false; }
     match /quizResults/{id} { allow read, write: if false; }
   }
 }

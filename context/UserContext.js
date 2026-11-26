@@ -3,6 +3,7 @@ import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db } from '../config/firebase';
 import { apiConfigured, syncProfile } from '../services/api';
+import { removeEmailFromMyPosts } from '../services/postService';
 import { dayKey, gamificationFor, nextActivity } from '../utils/gamification';
 
 const UserContext = createContext(null);
@@ -53,6 +54,12 @@ export function UserProvider({ children }) {
         setProfileLoading(false);
       }
     );
+  }, [user?.uid]);
+
+  // One-time privacy clean-up of posts made by older app versions.
+  useEffect(() => {
+    if (!user) return;
+    removeEmailFromMyPosts().catch(() => {});
   }, [user?.uid]);
 
   const game = useMemo(() => (profile ? gamificationFor(profile) : null), [profile]);

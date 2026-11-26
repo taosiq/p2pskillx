@@ -68,12 +68,14 @@ export const deleteAccount = async (password) => {
   try {
     const credential = EmailAuthProvider.credential(current.email, password);
     await reauthenticateWithCredential(current, credential);
-    try {
-      const { cleanupAccount } = await import('./api');
+    // The server removes the profile, posts, notifications and follow links.
+    const { apiConfigured, cleanupAccount } = await import('./api');
+    if (apiConfigured) {
       await cleanupAccount();
-    } catch {}
-    await deleteDoc(doc(db, 'users', current.uid, 'private', 'details')).catch(() => {});
-    await deleteDoc(doc(db, 'users', current.uid));
+    } else {
+      await deleteDoc(doc(db, 'users', current.uid, 'private', 'details')).catch(() => {});
+      await deleteDoc(doc(db, 'users', current.uid));
+    }
     await deleteUser(current);
     return { success: true };
   } catch (error) {

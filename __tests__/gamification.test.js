@@ -65,6 +65,13 @@ describe('XP is derived from activity', () => {
   test('a stored xp field is ignored (cannot be faked by editing it)', () => {
     expect(computeXP({ xp: 999999 }).total).toBe(0);
   });
+
+  test('teaching XP counts at most 3 courses per verified skill', () => {
+    const oneSkill = { verifiedSkills: { Python: { level: 'Beginner' } } }; // 30 XP
+    expect(computeXP({ ...oneSkill, teachingCount: 3 }).total).toBe(30 + 3 * 80);
+    expect(computeXP({ ...oneSkill, teachingCount: 100 }).total).toBe(30 + 3 * 80);
+    expect(computeXP({ teachingCount: 100 }).total).toBe(0);
+  });
 });
 
 describe('streaks', () => {

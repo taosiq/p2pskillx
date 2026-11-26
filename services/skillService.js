@@ -1,4 +1,4 @@
-import { arrayUnion, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, deleteField, doc, FieldPath, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
 /**
@@ -136,23 +136,13 @@ export const removeVerifiedSkill = async (skillName) => {
     }
     
     const userData = userDoc.data();
-    const verifiedSkills = { ...userData.verifiedSkills } || {};
-    
-    // Remove the skill
-    if (verifiedSkills[skillName]) {
-      delete verifiedSkills[skillName];
-      
-      // Update the document
-      await updateDoc(userDocRef, {
-        verifiedSkills: verifiedSkills,
-        // Would need to also update the skills array, but Firebase doesn't have arrayRemove with conditional
-        // For now we'll just keep it in the array, as it's mostly for search indexing
-      });
-      
-      return { success: true };
-    } else {
+    if (!userData.verifiedSkills?.[skillName]) {
       return { success: false, error: 'Skill not found' };
     }
+
+    // Security rules allow removing a verified skill, never adding or editing one.
+    await updateDoc(userDocRef, new FieldPath('verifiedSkills', skillName), deleteField(), 'skills', arrayRemove(skillName));
+    return { success: true };
   } catch (error) {
     console.error('Error removing verified skill:', error);
     return { success: false, error: error.message };

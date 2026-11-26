@@ -218,13 +218,35 @@ async function enroll(env, fs, uid, body) {
 
 // ---------------------------------------------------------------- XP / streak / rewards
 
+/**
+ * Lesson progress is written by the app, so before it earns XP, check each
+ * "completed" course against the real number of lessons in that course.
+ */
+async function verifiedProgress(fs, user) {
+  const progress = user.courseProgress && typeof user.courseProgress === 'object' ? user.courseProgress : {};
+  const claims = Object.entries(progress)
+    .filter(([id, p]) => user.enrolledCourses?.[id] && p?.total > 0 && (p.done?.length || 0) >= p.total)
+    .slice(0, 200);
+  const out = {};
+  await Promise.all(
+    claims.map(async ([id, p]) => {
+      if (!SAFE_ID.test(id)) return;
+      const course = (await fs.get(`courses/${id}`))?.data;
+      const lessons = Number(course?.sectionCount) || (Array.isArray(course?.sections) ? course.sections.length : 0);
+      const done = new Set((p.done || []).filter((n) => Number.isInteger(n) && n >= 0 && n < lessons));
+      if (lessons > 0 && done.size >= lessons) out[id] = { done: [...done], total: lessons };
+    })
+  );
+  return out;
+}
+
 async function syncProfile(env, fs, uid, body) {
   const teachingCount = await fs.count('courses', [['creatorId', 'EQUAL', uid]]);
 
   return fs.runTransaction(async (tx) => {
     const u = await fs.get(`users/${uid}`, tx);
     if (!u) throw new HttpError(404, 'no_profile', 'Profile not found.');
-    const profile = { ...u.data, teachingCount };
+    const profile = { ...u.data, teachingCount, courseProgress: await verifiedProgress(fs, u.data) };
 
     const activity = nextActivity(profile.activity || {}, userDay(body.tzOffset)) || profile.activity || null;
     const withActivity = { ...profile, activity };
@@ -291,6 +313,8 @@ async function syncProfile(env, fs, uid, body) {
 
 // ---------------------------------------------------------------- account cleanup
 
+const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 async function accountCleanup(env, fs, uid) {
   const me = (await fs.get(`users/${uid}`))?.data || {};
   const [posts, notes, convs] = await Promise.all([
@@ -298,23 +322,37 @@ async function accountCleanup(env, fs, uid) {
     fs.query('notifications', [['recipientId', 'EQUAL', uid]], { select: ['recipientId'] }),
     fs.query('conversations', [['participants', 'ARRAY_CONTAINS', uid]], { select: ['participants'] }),
   ]);
+
+  // Only touch people who really are connected: the owner controls their own
+  // "following" list, so it can't be trusted to name whose counts to lower.
+  const ids = (list) => [...new Set((Array.isArray(list) ? list : []).filter((id) => typeof id === 'string' && SAFE_ID.test(id) && id !== uid))].slice(0, 500);
+  const load = (list) => Promise.all(ids(list).map(async (id) => ({ id, data: (await fs.get(`users/${id}`))?.data })));
+  const [followed, followers] = await Promise.all([load(me.following), load(me.followers)]);
+
   const writes = [
     ...posts.map((p) => deleteWrite(fs, p.path)),
     ...notes.map((n) => deleteWrite(fs, n.path)),
     // Others keep their side of a chat, but this person disappears from it.
     ...convs.map((c) => updateWrite(fs, c.path, [[['deletedParticipant'], uid]], [], { exists: true })),
-    ...(me.following || []).map((other) =>
-      updateWrite(fs, `users/${other}`, [], [{ path: ['followers'], remove: [uid] }, { path: ['followersCount'], increment: -1 }], { exists: true })
-    ),
-    ...(me.followers || []).map((other) =>
-      updateWrite(fs, `users/${other}`, [], [{ path: ['following'], remove: [uid] }, { path: ['followingCount'], increment: -1 }], { exists: true })
-    ),
+    ...followed
+      .filter((o) => (o.data?.followers || []).includes(uid))
+      .map((o) => updateWrite(fs, `users/${o.id}`, [], [{ path: ['followers'], remove: [uid] }, { path: ['followersCount'], increment: -1 }], { exists: true })),
+    ...followers
+      .filter((o) => (o.data?.following || []).includes(uid))
+      .map((o) => updateWrite(fs, `users/${o.id}`, [], [{ path: ['following'], remove: [uid] }, { path: ['followingCount'], increment: -1 }], { exists: true })),
     deleteWrite(fs, `serverState/${uid}`),
-    deleteWrite(fs, `users/${uid}/private/details`),
   ];
   for (let i = 0; i < writes.length; i += 400) {
     await fs.commit(writes.slice(i, i + 400)).catch(() => {}); // best effort: missing docs shouldn't block deletion
   }
+
+  // Last: remove the profile, and remember the account was deleted so the same
+  // login can't re-create a profile and collect a second starting balance.
+  await fs.commit([
+    setWrite(fs, `deletedAccounts/${uid}`, { deletedAt: new Date() }),
+    deleteWrite(fs, `users/${uid}/private/details`),
+    deleteWrite(fs, `users/${uid}`),
+  ]);
   return { removedPosts: posts.length };
 }
 

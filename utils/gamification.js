@@ -10,6 +10,7 @@ export const XP_RULES = {
   skill: { Beginner: 30, Intermediate: 50, Advanced: 75, Expert: 100 },
   skillDefault: 50,
   courseCreated: 80,
+  coursesPerSkill: 3,
   courseEnrolled: 25,
   courseCompleted: 40,
   follower: 5,
@@ -76,7 +77,14 @@ export function computeXP(profile = {}) {
 
   const breakdown = [
     { key: 'skills', label: 'Verified skills', icon: 'ribbon', count: c.skillCount, xp: skillXP },
-    { key: 'teach', label: 'Courses taught', icon: 'easel', count: c.coursesCreated, xp: c.coursesCreated * XP_RULES.courseCreated },
+    // Up to 3 courses per verified skill earn XP, so publishing empty courses can't farm levels.
+    {
+      key: 'teach',
+      label: 'Courses taught',
+      icon: 'easel',
+      count: c.coursesCreated,
+      xp: Math.min(c.coursesCreated, c.skillCount * XP_RULES.coursesPerSkill) * XP_RULES.courseCreated,
+    },
     { key: 'learn', label: 'Courses joined', icon: 'school', count: c.coursesEnrolled, xp: c.coursesEnrolled * XP_RULES.courseEnrolled },
     { key: 'complete', label: 'Courses completed', icon: 'checkmark-done-circle', count: c.coursesCompleted, xp: c.coursesCompleted * XP_RULES.courseCompleted },
     { key: 'followers', label: 'Followers', icon: 'people', count: c.followers, xp: c.followers * XP_RULES.follower },
