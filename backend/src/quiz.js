@@ -61,8 +61,26 @@ Rules: exactly 4 distinct options each; exactly one correct; no "all/none of the
 Reply with JSON only:
 {"questions":[{"question":"...","options":["...","...","...","..."],"correctAnswer":0,"explanation":"one sentence"}]}`;
 
+  // The free models "think" before answering. Keep that thinking short and leave plenty of
+  // room for the answer: with a small budget they can spend it all thinking and return nothing.
+  // Try the models one at a time (OpenRouter only falls back on errors, not on empty answers),
+  // within a total budget that stays under the app's 75-second wait.
+  const deadline = Date.now() + 65000;
+  let best = [];
+  for (const model of models) {
+    const remaining = deadline - Date.now();
+    if (remaining < 8000) break;
+    const questions = await askModel(env, model, prompt, remaining);
+    if (questions.length > best.length) best = questions;
+    if (best.length >= QUESTION_COUNT) break;
+    console.log(`quiz: ${model} gave ${questions.length} usable questions`);
+  }
+  return best;
+}
+
+async function askModel(env, model, prompt, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 55000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -74,20 +92,25 @@ Reply with JSON only:
         'X-Title': 'P2PSkillX',
       },
       body: JSON.stringify({
-        models,
+        model,
         messages: [
           { role: 'system', content: 'You write accurate, well-calibrated skill assessment questions. Output strict JSON.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.4,
-        max_tokens: 3500,
+        max_tokens: 8000,
+        reasoning: { effort: 'low', exclude: true },
       }),
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.log(`quiz: ${model} returned HTTP ${res.status}`);
+      return [];
+    }
     const data = await res.json();
     const parsed = extractJson(data?.choices?.[0]?.message?.content || '');
     return sanitiseQuestions(parsed?.questions);
-  } catch {
+  } catch (e) {
+    console.log(`quiz: ${model} failed (${e?.name === 'AbortError' ? 'timeout' : 'error'})`);
     return [];
   } finally {
     clearTimeout(timer);
