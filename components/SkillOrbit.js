@@ -22,7 +22,7 @@ const CHIPS = [
   { label: 'AI', icon: 'hardware-chip', x: -8, y: 92, color: '#12C2FF' },
 ];
 
-function FloatingChip({ chip, index }) {
+function FloatingChip({ chip, index, spread }) {
   const { colors } = useTheme();
   const t = useSharedValue(0);
   const appear = useSharedValue(0);
@@ -38,8 +38,8 @@ function FloatingChip({ chip, index }) {
   const style = useAnimatedStyle(() => ({
     opacity: appear.value,
     transform: [
-      { translateX: chip.x },
-      { translateY: chip.y + (t.value - 0.5) * 10 },
+      { translateX: chip.x * spread },
+      { translateY: chip.y * spread + (t.value - 0.5) * 10 },
       { scale: 0.8 + appear.value * 0.2 },
     ],
   }));
@@ -54,8 +54,11 @@ function FloatingChip({ chip, index }) {
   );
 }
 
-/** Logo mark with skill chips floating around it (login hero). */
-export default function SkillOrbit({ size = 92 }) {
+/**
+ * Logo mark with skill chips floating around it (login hero).
+ * height / spread shrink it to fit smaller screens.
+ */
+export default function SkillOrbit({ size = 92, height = 230, spread = 1 }) {
   const { colors } = useTheme();
   const pulse = useSharedValue(0);
   useEffect(() => {
@@ -67,18 +70,18 @@ export default function SkillOrbit({ size = 92 }) {
   }));
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { height }]}>
       <Animated.View style={[styles.ring, { width: size, height: size, borderRadius: size * 0.34, borderColor: colors.primary }, ring]} />
       <LogoMark size={size} />
       {CHIPS.map((c, i) => (
-        <FloatingChip key={c.label} chip={c} index={i} />
+        <FloatingChip key={c.label} chip={c} index={i} spread={spread} />
       ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { height: 230, alignItems: 'center', justifyContent: 'center' },
+  wrap: { alignItems: 'center', justifyContent: 'center' },
   ring: { position: 'absolute', borderWidth: 2 },
   chip: {
     position: 'absolute',

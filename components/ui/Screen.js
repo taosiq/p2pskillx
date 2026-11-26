@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import React from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useTheme } from '../../theme';
@@ -50,18 +50,50 @@ export default function Screen({
   style,
   scrollRef,
   statusBarStyle,
+  bounce = true,
 }) {
   const { colors, spacing } = useTheme();
   const padding = padded ? { paddingHorizontal: spacing.xl } : null;
 
+  // Keep the field being typed in above the keyboard on scrolling forms.
+  const innerRef = useRef(null);
+  const offset = useRef(0);
+  const setRef = useCallback(
+    (node) => {
+      innerRef.current = node;
+      if (typeof scrollRef === 'function') scrollRef(node);
+      else if (scrollRef) scrollRef.current = node;
+    },
+    [scrollRef]
+  );
+  useEffect(() => {
+    if (!keyboard || !scroll) return undefined;
+    const sub = Keyboard.addListener('keyboardDidShow', (e) => {
+      const input = TextInput.State.currentlyFocusedInput?.();
+      const keyboardTop = e?.endCoordinates?.screenY;
+      if (!input?.measureInWindow || !innerRef.current || !keyboardTop) return;
+      input.measureInWindow((x, y, w, h) => {
+        const overlap = y + h + 24 - keyboardTop; // 24pt breathing room above the keys
+        if (overlap > 0) innerRef.current?.scrollTo({ y: offset.current + overlap, animated: true });
+      });
+    });
+    return () => sub.remove();
+  }, [keyboard, scroll]);
+
   let body = scroll ? (
     <ScrollView
-      ref={scrollRef}
+      ref={setRef}
+      onScroll={(e) => {
+        offset.current = e.nativeEvent.contentOffset.y;
+      }}
+      scrollEventThrottle={32}
       style={styles.flex}
       contentContainerStyle={[padding, { paddingBottom: 32 }, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
+      alwaysBounceVertical={bounce}
+      bounces={bounce}
       refreshControl={refreshControl}
     >
       {children}
