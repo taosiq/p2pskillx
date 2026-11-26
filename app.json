@@ -44,7 +44,7 @@
       "expo-web-browser"
     ],
     "extra": {
-      "apiUrl": ""
+      "apiUrl": "https://p2pskillx-api.p2pskillx-api.workers.dev"
     }
   }
 }
