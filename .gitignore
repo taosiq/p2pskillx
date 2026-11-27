@@ -49,3 +49,6 @@ android/.gradle/
 
 # Firebase emulator logs
 *-debug.log
+
+# Loose screenshots dropped in the project folder
+WhatsApp Image*
