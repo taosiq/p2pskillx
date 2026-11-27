@@ -96,7 +96,7 @@ export function ComposerPrompt({ onPress, author }) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  input: { minHeight: 120, maxHeight: 220, padding: 14, fontSize: 16, textAlignVertical: 'top' },
+  input: { minHeight: 110, maxHeight: 180, padding: 14, fontSize: 16, textAlignVertical: 'top' },
   preview: { width: '100%', aspectRatio: 4 / 3 },
   remove: { position: 'absolute', top: 8, right: 8 },
   footer: { flexDirection: 'row', alignItems: 'center', marginTop: 14 },

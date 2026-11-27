@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import Composer, { ComposerPrompt } from '../components/social/Composer';
+import useKeyboardScroll from '../hooks/useKeyboardScroll';
 import PostCard from '../components/social/PostCard';
 import { ContentOptionsSheet } from '../components/social/SafetySheets';
 import { TAB_BAR_SPACE } from '../components/TabBar';
@@ -32,6 +33,7 @@ const HomeScreen = ({ navigation }) => {
   const { posts, error, load, like, comment, remove, prepend, blocked } = usePosts();
   const [scope, setScope] = useState('all');
   const [composerOpen, setComposerOpen] = useState(false);
+  const kb = useKeyboardScroll({ enabled: !composerOpen });
   const [refreshing, setRefreshing] = useState(false);
   const [options, setOptions] = useState(null);
   const [people, setPeople] = useState([]);
@@ -197,6 +199,9 @@ const HomeScreen = ({ navigation }) => {
       }
     >
       <FlatList
+        ref={kb.ref}
+        {...kb.listProps}
+        keyboardDismissMode="on-drag"
         data={feed || []}
         keyExtractor={(p) => p.id}
         renderItem={({ item, index }) => (
@@ -214,7 +219,7 @@ const HomeScreen = ({ navigation }) => {
         )}
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: TAB_BAR_SPACE, gap: 12 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: TAB_BAR_SPACE + kb.keyboardPadding, gap: 12 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
         initialNumToRender={6}

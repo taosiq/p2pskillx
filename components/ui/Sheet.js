@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardHeight } from '../../hooks/useKeyboardScroll';
 import { useTheme } from '../../theme';
 import AppText from './AppText';
 
@@ -8,7 +9,13 @@ import AppText from './AppText';
 export default function Sheet({ visible, onClose, title, subtitle, children, scroll = false }) {
   const { colors, radius } = useTheme();
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const Body = scroll ? ScrollView : View;
+  // iOS doesn't move modals for the keyboard, so lift the sheet by the keyboard's
+  // height. (Android resizes the modal window itself.)
+  const keyboard = useKeyboardHeight();
+  const lift = Platform.OS === 'ios' ? keyboard : 0;
+  const maxBody = Math.max(160, Math.min(520, screenHeight - lift - insets.top - 160));
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
@@ -26,7 +33,8 @@ export default function Sheet({ visible, onClose, title, subtitle, children, scr
               backgroundColor: colors.bgElevated,
               borderTopLeftRadius: radius.xxl,
               borderTopRightRadius: radius.xxl,
-              paddingBottom: insets.bottom + 16,
+              paddingBottom: lift ? lift + 12 : insets.bottom + 16,
+              maxHeight: screenHeight - insets.top - 12,
               borderColor: colors.border,
             },
           ]}
@@ -42,7 +50,11 @@ export default function Sheet({ visible, onClose, title, subtitle, children, scr
               ) : null}
             </View>
           ) : null}
-          <Body style={scroll ? { maxHeight: 520 } : null} contentContainerStyle={scroll ? { paddingBottom: 8 } : undefined}>
+          <Body
+            style={scroll ? { maxHeight: maxBody } : null}
+            contentContainerStyle={scroll ? { paddingBottom: 8 } : undefined}
+            keyboardShouldPersistTaps={scroll ? 'handled' : undefined}
+          >
             {children}
           </Body>
         </View>

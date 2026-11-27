@@ -202,6 +202,9 @@ describe('allowed: what the app does', () => {
     await assertSucceeds(updateDoc(doc(b, 'conversations/bob_carol'), { 'unread.bob': 0 }));
     // delete the chat for me
     await assertSucceeds(updateDoc(doc(b, 'conversations/bob_carol'), { 'clearedAt.bob': serverTimestamp(), 'unread.bob': 0 }));
+    // archive and unarchive it for me
+    await assertSucceeds(updateDoc(doc(b, 'conversations/bob_carol'), { 'archived.bob': true }));
+    await assertSucceeds(updateDoc(doc(b, 'conversations/bob_carol'), { 'archived.bob': false }));
   });
 
   test('notifications: send a like, read, mark read, delete; report content', async () => {
@@ -318,6 +321,7 @@ describe('blocked: attacks', () => {
     await assertFails(updateDoc(doc(db('bob'), 'conversations/alice_bob/messages/m1'), { text: 'edited by bob' }));
     // bob can't delete alice's copy of their chat
     await assertFails(updateDoc(doc(db('bob'), 'conversations/alice_bob'), { 'clearedAt.alice': serverTimestamp() }));
+    await assertFails(updateDoc(doc(db('bob'), 'conversations/alice_bob'), { 'archived.alice': true }));
     // carol tries to grab the id of another pair's chat
     await assertFails(setDoc(doc(c, 'conversations/alice_dave'), { participants: ['carol', 'alice'] }));
     await assertFails(setDoc(doc(c, 'conversations/random123'), { participants: ['carol', 'alice'] }));

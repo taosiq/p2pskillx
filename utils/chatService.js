@@ -168,6 +168,7 @@ export const deleteConversationForMe = async (conversationId) => {
   await updateDoc(doc(db, 'conversations', conversationId), {
     [`clearedAt.${me}`]: serverTimestamp(),
     [`unread.${me}`]: 0,
+    [`archived.${me}`]: false,
   });
 };
 
@@ -177,6 +178,13 @@ export const markMessagesAsRead = async (conversationId) => {
   try {
     await updateDoc(doc(db, 'conversations', conversationId), { [`unread.${me}`]: 0 });
   } catch {}
+};
+
+/** Archive or unarchive a chat, for the current user only. */
+export const setConversationArchived = async (conversationId, archived) => {
+  const me = auth.currentUser?.uid;
+  if (!me) throw new Error('You must be signed in');
+  await updateDoc(doc(db, 'conversations', conversationId), { [`archived.${me}`]: !!archived });
 };
 
 /** Live list of my conversations with the other person's details. */
@@ -207,6 +215,7 @@ export const getUserConversations = (callback) => {
             lastSenderId: c.lastSenderId || null,
             lastMessageTime: c.lastMessageTime?.toDate ? c.lastMessageTime.toDate() : new Date(),
             unreadCount: c.unread?.[me] || 0,
+            archived: !!c.archived?.[me],
             courseId: c.courseId || null,
             courseTitle: c.courseTitle || null,
           };
@@ -228,7 +237,8 @@ export const listenUnreadTotal = (callback) => {
   const q = query(collection(db, 'conversations'), where('participants', 'array-contains', me));
   return onSnapshot(
     q,
-    (snap) => callback(snap.docs.reduce((s, d) => s + (d.data().unread?.[me] || 0), 0)),
+    // Archived chats don't count towards the badge.
+    (snap) => callback(snap.docs.reduce((s, d) => s + (d.data().archived?.[me] ? 0 : d.data().unread?.[me] || 0), 0)),
     () => callback(0)
   );
 };
