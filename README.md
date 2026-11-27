@@ -103,14 +103,20 @@ npx expo start -c
 Scan the QR code with Expo Go (Android) or the Camera app (iOS). Your phone and
 computer must be on the same Wi-Fi network.
 
+**Troubleshooting**
+- Phone can't connect, or it's stuck loading: run `npx expo start -c --tunnel` instead.
+- "Unable to resolve module": make sure you're in the project root, not `backend/`.
+- New accounts must verify their email before using the app (check the spam folder).
+
 ### Run the tests
+Run each from the project root:
 ```bash
-npm test                 # app: gamification engine and helpers
-cd backend && npm test   # backend: quiz sealing, question cleaning, Firestore encoding
-cd firestore-tests && npm install && npm test   # security rules, in the Firestore emulator (needs Java)
+npm test                                          # app: gamification engine and helpers
+cd backend && npm install && npm test             # backend: quiz sealing, question cleaning, Firestore encoding
+cd firestore-tests && npm install && npm test     # security rules in the Firestore emulator (needs Java and firebase-tools)
 ```
 The rules tests replay every write the app makes (sign-up, posts, follows, courses,
-chat, notifications) and 30+ attacks: self-granted credits or XP, fake followers,
+chat, notifications) and 70+ attacks: self-granted credits or XP, fake followers,
 reading paid lessons, chat hijacking, spoofed notifications, and more.
 
 ### Backend and database
