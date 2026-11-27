@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, FlatList, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { TAB_BAR_SPACE } from '../components/TabBar';
 import { AppText, Avatar, EmptyState, Header, IconButton, PressableScale, Screen, Skeleton } from '../components/ui';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../theme';
-import { getUserConversations } from '../utils/chatService';
+import { deleteConversationForMe, getUserConversations } from '../utils/chatService';
+import haptics from '../utils/haptics';
 import { levelInfo } from '../utils/gamification';
 import { chatTime } from '../utils/time';
 
@@ -42,13 +43,34 @@ const ConversationsScreen = ({ navigation }) => {
       otherUserName: c.otherUserDetails.name,
     });
 
+  // Long-press a chat to delete it (for me only).
+  const askDelete = (c) => {
+    haptics.warning();
+    Alert.alert(`Delete chat with ${c.otherUserDetails.name}?`, 'It will be removed from your chats. They will still have their copy.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setList((rows) => (rows || []).filter((r) => r.conversationId !== c.conversationId));
+          try {
+            await deleteConversationForMe(c.conversationId);
+            haptics.success();
+          } catch {
+            Alert.alert('Couldn’t delete chat', 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
+
   const renderItem = ({ item: c, index }) => {
     const unread = c.unreadCount > 0;
     const tier = levelInfo(c.otherUserDetails.xp).tier;
     const mine = c.lastSenderId === user?.uid;
     return (
       <Animated.View entering={index < 10 ? FadeInDown.delay(index * 35) : undefined}>
-        <PressableScale onPress={() => open(c)} scaleTo={0.98} accessibilityLabel={`Chat with ${c.otherUserDetails.name}${unread ? `, ${c.unreadCount} unread` : ''}`}>
+        <PressableScale onPress={() => open(c)} onLongPress={() => askDelete(c)} scaleTo={0.98} accessibilityLabel={`Chat with ${c.otherUserDetails.name}${unread ? `, ${c.unreadCount} unread` : ''}`}>
           <View style={[styles.row, { backgroundColor: unread ? colors.primarySoft : 'transparent', borderRadius: radius.lg }]}>
             <Avatar uri={c.otherUserDetails.photo} name={c.otherUserDetails.name} size={54} ring={tier.colors} />
             <View style={{ flex: 1, marginLeft: 12 }}>

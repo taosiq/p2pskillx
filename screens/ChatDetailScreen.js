@@ -1,14 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, TextInput, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ContentOptionsSheet } from '../components/social/SafetySheets';
+import { ActionRow, ContentOptionsSheet } from '../components/social/SafetySheets';
 import { AppText, Avatar, EmptyState, IconButton, PressableScale, Screen } from '../components/ui';
 import { useUser } from '../context/UserContext';
 import { useTheme } from '../theme';
-import { getMessages, getUserDetailsForChat, markMessagesAsRead, sendMessage } from '../utils/chatService';
+import { deleteConversationForMe, getMessages, getUserDetailsForChat, markMessagesAsRead, sendMessage } from '../utils/chatService';
 import { levelInfo } from '../utils/gamification';
 import haptics from '../utils/haptics';
 import { toDate } from '../utils/time';
@@ -36,6 +36,26 @@ const ChatDetailScreen = ({ navigation, route }) => {
   const [options, setOptions] = useState(null);
   const listRef = useRef(null);
   const blocked = (profile?.blocked || []).includes(otherUserId);
+
+  const confirmDelete = () => {
+    setOptions(null);
+    Alert.alert('Delete this chat?', `Your messages with ${other.name} will be removed from your chats. ${other.name} will still have their copy.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteConversationForMe(conversationId);
+            haptics.success();
+            navigation.goBack();
+          } catch {
+            Alert.alert('Couldn’t delete chat', 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
 
   useEffect(() => {
     if (otherUserId) getUserDetailsForChat(otherUserId).then(setOther);
@@ -226,7 +246,12 @@ const ChatDetailScreen = ({ navigation, route }) => {
         )}
       </KeyboardAvoidingView>
 
-      <ContentOptionsSheet target={options} onClose={() => setOptions(null)} onBlocked={() => navigation.goBack()} />
+      <ContentOptionsSheet
+        target={options}
+        onClose={() => setOptions(null)}
+        onBlocked={() => navigation.goBack()}
+        extra={conversationId ? <ActionRow icon="trash-outline" label="Delete chat" danger onPress={confirmDelete} /> : null}
+      />
     </Screen>
   );
 };

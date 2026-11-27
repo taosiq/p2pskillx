@@ -213,8 +213,11 @@ service cloud.firestore {
         && (convId == request.resource.data.participants[0] + '_' + request.resource.data.participants[1]
             || convId == request.resource.data.participants[1] + '_' + request.resource.data.participants[0])
         && notBlockedBy(request.resource.data.participants.removeAll([me()])[0]);
+      // Each person may only set their own "deleted at" time.
       allow update: if signedIn() && me() in resource.data.participants
-        && !changed().hasAny(['participants', 'createdAt']);
+        && !changed().hasAny(['participants', 'createdAt'])
+        && (!changed().hasAny(['clearedAt'])
+            || request.resource.data.clearedAt.diff(resource.data.get('clearedAt', {})).affectedKeys().hasOnly([me()]));
 
       match /messages/{messageId} {
         allow read: if signedIn() && participant(convId);

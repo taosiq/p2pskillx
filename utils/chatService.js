@@ -111,22 +111,64 @@ export const sendMessage = async (conversationId, text) => {
   return msgRef.id;
 };
 
-/** Live messages, oldest first. callback(messages, error) */
+const millis = (t) => (t?.toMillis ? t.toMillis() : t instanceof Date ? t.getTime() : 0);
+
+/**
+ * Live messages, oldest first. callback(messages, error)
+ * Messages from before the user deleted the chat (clearedAt) are left out.
+ */
 export const getMessages = (conversationId, callback, max = 200) => {
-  const q = query(collection(db, 'conversations', conversationId, 'messages'), orderBy('timestamp', 'desc'), limit(max));
-  return onSnapshot(
-    q,
+  const me = auth.currentUser?.uid;
+  let clearedAt = 0;
+  let lastDocs = null;
+
+  const emit = () => {
+    if (!lastDocs) return;
+    const list = lastDocs
+      .map((d) => {
+        const m = d.data({ serverTimestamps: 'estimate' });
+        return { id: d.id, ...m, timestamp: m.timestamp?.toDate ? m.timestamp.toDate() : new Date(), pending: d.metadata.hasPendingWrites };
+      })
+      .filter((m) => !clearedAt || m.timestamp.getTime() > clearedAt)
+      .reverse();
+    callback(list, null);
+  };
+
+  const stopConv = onSnapshot(
+    doc(db, 'conversations', conversationId),
     (snap) => {
-      const list = snap.docs
-        .map((d) => {
-          const m = d.data();
-          return { id: d.id, ...m, timestamp: m.timestamp?.toDate ? m.timestamp.toDate() : new Date(), pending: d.metadata.hasPendingWrites };
-        })
-        .reverse();
-      callback(list, null);
+      clearedAt = millis(snap.data({ serverTimestamps: 'estimate' })?.clearedAt?.[me]);
+      emit();
+    },
+    () => {}
+  );
+  const stopMessages = onSnapshot(
+    query(collection(db, 'conversations', conversationId, 'messages'), orderBy('timestamp', 'desc'), limit(max)),
+    (snap) => {
+      lastDocs = snap.docs;
+      emit();
     },
     (error) => callback([], error)
   );
+  return () => {
+    stopConv();
+    stopMessages();
+  };
+};
+
+/**
+ * Delete a chat for the current user only (like WhatsApp's "Delete chat"):
+ * it leaves their list and its history is hidden. The other person keeps
+ * their copy; if either sends a new message, the chat comes back with only
+ * the new messages.
+ */
+export const deleteConversationForMe = async (conversationId) => {
+  const me = auth.currentUser?.uid;
+  if (!me) throw new Error('You must be signed in');
+  await updateDoc(doc(db, 'conversations', conversationId), {
+    [`clearedAt.${me}`]: serverTimestamp(),
+    [`unread.${me}`]: 0,
+  });
 };
 
 export const markMessagesAsRead = async (conversationId) => {
@@ -150,9 +192,12 @@ export const getUserConversations = (callback) => {
     async (snap) => {
       const rows = await Promise.all(
         snap.docs.map(async (d) => {
-          const c = d.data();
+          const c = d.data({ serverTimestamps: 'estimate' });
           const otherUserId = (c.participants || []).find((p) => p !== me);
           if (!otherUserId) return null;
+          // Deleted by me, and nothing new since.
+          const cleared = millis(c.clearedAt?.[me]);
+          if (cleared && millis(c.lastMessageTime) <= cleared) return null;
           const other = await getUserDetailsForChat(otherUserId);
           return {
             conversationId: d.id,
